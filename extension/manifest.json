@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "tidy",
+  "version": "0.1.0",
+  "description": "Comment on any web page — pick an element, drag a region, attach a screenshot — and send it to a Claude Code session.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "action": {
+    "default_title": "tidy — send page feedback"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-overlay": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Toggle the tidy overlay on the current tab"
+    }
+  },
+  "options_ui": {
+    "page": "popup.html",
+    "open_in_tab": false
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "tidy",
+  "version": "0.1.0",
+  "description": "Send page feedback — a comment, the element you picked, and a screenshot — from any web page into a coding-agent session.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "tidy": "bin/tidy.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "extension",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devtoil/tidy.git"
+  },
+  "homepage": "https://github.com/devtoil/tidy",
+  "bugs": {
+    "url": "https://github.com/devtoil/tidy/issues"
+  },
+  "keywords": [
+    "feedback",
+    "browser-extension",
+    "mcp",
+    "claude-code",
+    "screenshot",
+    "devtools"
+  ],
+  "author": "Steven Naimark",
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  },
+  "scripts": {
+    "test": "node test/browser.mjs"
+  }
+}

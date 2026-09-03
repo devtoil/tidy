@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 320px; margin: 0; padding: 12px; font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #111827; }
+      h1 { font-size: 13px; margin: 0 0 10px; }
+      label { display: block; font-size: 11px; color: #6b7280; margin: 8px 0 3px; }
+      input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; }
+      button { width: 100%; margin-top: 10px; padding: 7px; border-radius: 7px; border: 1px solid #4f46e5; background: #4f46e5; color: #fff; font-size: 13px; cursor: pointer; }
+      button.ghost { background: #fff; color: #374151; border-color: #d1d5db; margin-top: 6px; }
+      .status { margin-top: 10px; font-size: 11px; padding: 6px 8px; border-radius: 6px; background: #f3f4f6; color: #4b5563; }
+      .status.bad { background: #fef2f2; color: #b91c1c; }
+      .status.good { background: #ecfdf5; color: #065f46; }
+      kbd { font: 11px ui-monospace, Menlo, monospace; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 4px; }
+      .hint { margin-top: 8px; font-size: 11px; color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <h1>tidy</h1>
+    <label for="endpoint">Collector endpoint</label>
+    <input id="endpoint" type="url" placeholder="http://127.0.0.1:7787" />
+    <label for="channel">Channel (optional)</label>
+    <input id="channel" type="text" placeholder="e.g. ziptility-web" />
+    <div id="status" class="status">Checking…</div>
+    <button id="save">Save settings</button>
+    <p class="hint">Click the toolbar icon, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, to open the overlay on a page.</p>
+    <script src="popup.js"></script>
+  </body>
+</html>
