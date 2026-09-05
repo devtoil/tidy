@@ -163,14 +163,17 @@
 
   /** Re-entering the top layer moves the overlay above anything that entered it since. */
   function raise() {
-    if (!CAN_RAISE || !host.isConnected) return
+    if (!CAN_RAISE || !host.isConnected || !host.hasAttribute('popover')) return
     try {
       if (host.matches(':popover-open')) host.hidePopover()
       host.showPopover()
     } catch {
-      // A popover cannot be shown while the document is unloading. Nothing to
-      // recover: the overlay still works, it is just back under a dialog.
+      // A popover cannot be shown while the document is unloading.
     }
+    // A popover that is not open is held at display:none by the UA stylesheet, so
+    // failing to show would take the whole overlay with it. Give up the top layer
+    // instead: back under a dialog is visible, gone is not.
+    if (!host.matches(':popover-open')) host.removeAttribute('popover')
   }
 
   const root = host.attachShadow({ mode: 'open' })
@@ -300,15 +303,15 @@
   // ------------------------------------------------------------ mode plumbing
 
   function setMode(next) {
-    // Picking needs the page visible.
+    // Picking needs the page visible. A dialog can also enter the top layer after
+    // the overlay did, and arming a mode is the moment the highlight has to be
+    // visible, so take the top back here too.
     if (next !== 'idle') {
       removePanel()
       pendingShot = undefined
       composerToken += 1
+      raise()
     }
-    // A dialog can enter the top layer after the overlay did. Arming a mode is the
-    // moment the highlight has to be visible, so take the top back here.
-    if (next !== 'idle') raise()
     mode = next
     document.documentElement.style.cursor = next === 'idle' ? '' : 'crosshair'
     if (next === 'idle') hideHighlight()

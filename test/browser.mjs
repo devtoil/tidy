@@ -392,10 +392,10 @@ pageServer.listen(PAGE_PORT, '127.0.0.1')
     // A CDK dialog is in the top layer, so the overlay has to be there too or the
     // highlight, the composer and the toolbar are all painted underneath it — the
     // picker still resolves the element, the user just cannot see that it did.
-    const page3 = await overlayPage(browser, () => {
-      window.__tidyConfig = { endpoint: 'http://127.0.0.1:7900', source: 'bookmarklet' }
+    const page3 = await overlayPage(browser, (endpoint) => {
+      window.__tidyConfig = { endpoint, source: 'bookmarklet' }
       window.__tidyCapture = async () => undefined
-    })
+    }, ENDPOINT)
     await page3.evaluate(() => document.getElementById('cdk-host').showPopover())
     await page3.evaluate(() => window.__tidy.open())
     await composer(page3)
