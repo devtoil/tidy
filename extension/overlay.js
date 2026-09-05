@@ -163,17 +163,14 @@
 
   /** Re-entering the top layer moves the overlay above anything that entered it since. */
   function raise() {
-    if (!CAN_RAISE || !host.isConnected || !host.hasAttribute('popover')) return
+    if (!CAN_RAISE || !host.isConnected) return
     try {
       if (host.matches(':popover-open')) host.hidePopover()
       host.showPopover()
     } catch {
-      // A popover cannot be shown while the document is unloading.
+      // A popover cannot be shown while the document is unloading. Nothing to
+      // recover: the overlay still works, it is just back under a dialog.
     }
-    // A popover that is not open is held at display:none by the UA stylesheet, so
-    // failing to show would take the whole overlay with it. Give up the top layer
-    // instead: back under a dialog is visible, gone is not.
-    if (!host.matches(':popover-open')) host.removeAttribute('popover')
   }
 
   const root = host.attachShadow({ mode: 'open' })
@@ -412,13 +409,13 @@
     else api.close()
   }
 
-  // Popovers and dialogs announce themselves with a non-bubbling `toggle`, which a
-  // capturing listener on the document still sees. Anything that opens after the
-  // overlay entered the top layer is now above it, so take the top back.
+  // A popover announces itself with a non-bubbling `toggle`, which a capturing
+  // listener on the document still sees. Anything that opens after the overlay
+  // entered the top layer is now above it, so take the top back.
   function onToggle(event) {
     if (event.newState !== 'open') return
     const node = event.target
-    if (node === host || !(node.hasAttribute?.('popover') || node.tagName === 'DIALOG')) return
+    if (node === host || node.hasAttribute?.('popover') !== true) return
     raise()
   }
 
