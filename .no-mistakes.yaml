@@ -1,0 +1,159 @@
+# no-mistakes push gate — https://kunchenguid.github.io/no-mistakes/
+#
+# Pipeline (fixed order): intent → rebase → review → test → document → lint → push → pr → ci
+#
+# `agent`, `commands.*`, `review.path_instructions`, `document.instructions` and
+# `ci.*` are read from the DEFAULT BRANCH only. Editing this file on a feature
+# branch changes nothing until it merges to `main`.
+
+agent: claude
+
+commands:
+  # `npm install` is REQUIRED, not incidental. The daemon runs each pipeline in a
+  # fresh detached worktree containing only tracked files — no `node_modules` — so
+  # `import('playwright-core')` fails and the suite SKIPS. There is no lockfile, so
+  # it is `npm install`, not `npm ci`.
+  #
+  # `playwright-core install chromium` writes into the machine-global
+  # ~/Library/Caches/ms-playwright, so it is a no-op once warm. It is here because
+  # playwright-core ships no browser: a version bump changes the expected revision
+  # and the suite starts skipping again.
+  #
+  # THE GREP IS THE WHOLE POINT. test/browser.mjs exits 0 on three separate skip
+  # paths — no playwright-core, no Chromium binary, port 7900/7901 busy — so a
+  # bare `npm test` is green when nothing ran at all. AGENTS.md says it outright:
+  # a green run on a machine without Chromium proves nothing. Only the final
+  # "All checks passed." line distinguishes 59 passing checks from zero.
+  test: >-
+    npm install --no-audit --fund=false &&
+    ./node_modules/.bin/playwright-core install chromium &&
+    out=$(npm test 2>&1); printf '%s\n' "$out";
+    printf '%s\n' "$out" | grep -q 'All checks passed'
+
+  # There is no linter, and adding one would mean adding a dependency. This is the
+  # only static check the repo has: `extension/*.js` is shipped unbundled and
+  # untyped, so a syntax error in overlay.js surfaces nowhere until Chrome refuses
+  # to inject it. Style rules live in review.path_instructions below, where they
+  # run against the diff instead of the whole tree.
+  lint: >-
+    for f in src/*.mjs bin/*.mjs test/*.mjs extension/*.js; do node --check "$f" || exit 1; done;
+    node -e 'JSON.parse(require("fs").readFileSync("extension/manifest.json","utf8"))'
+
+# GLOB SEMANTICS (learned the hard way in ziptility-web): `*` never crosses `/`, so
+# `**` is a SINGLE path segment, not a recursive wildcard — `src/**/*.mjs` would
+# match nothing here. This repo's directories are flat, so `src/*.mjs` is exact. A
+# pattern with no slash matches the basename at any depth; `dir/**` is the one
+# genuinely recursive form. Verify after any change: the review step logs
+# `N trusted review instruction rule(s) matched no changed path: <globs>` — that
+# line is the ONLY signal a rule is inert.
+review:
+  path_instructions:
+    - path: '*'
+      instructions: |
+        ZERO RUNTIME DEPENDENCIES. `dependencies` in package.json is empty and stays
+        empty; Node 20+ built-ins only. `playwright-core` is a devDependency for the
+        test suite and must never be imported from `src/` or `extension/`. A diff
+        that adds a package is a blocking finding unless the user asked for it by
+        name — twenty lines of built-ins is the expected answer.
+
+        EVERY USER-VISIBLE FAILURE NEEDS A USER-VISIBLE SURFACE. A `catch` that
+        logs to a console nobody has open is the exact bug this tool exists to
+        catch in other people's code. In the overlay that means the toast or the
+        composer's error state; in the CLI and collector it means stderr and a
+        non-zero exit. Flag any swallowed rejection, any `catch {}`, and any
+        failure whose only trace is `console.*`.
+
+        COMMENTS: the default for a diff is ZERO new comments. Flag every comment
+        that restates the code below it, recaps what the previous implementation
+        got wrong, or defends the approach against one that wasn't taken — that
+        belongs in the commit message. A comment earns its place only by recording
+        a trap the reader cannot see from the code: an external constraint like
+        Chrome's `activeTab` gesture rule, macOS dead keys, or `.git` being a file
+        in a worktree.
+
+        PUBLIC CONTRACTS. These are depended on from outside the file that defines
+        them, so renaming one is a breaking change, not a refactor — flag any diff
+        that changes one without changing every consumer:
+        `window.__tidy`, `__tidyConfig`, `__tidyCapture`, `__tidyConsole`,
+        `__tidyBridge`, `__tidyOpenSettings`, `__tidyHooked`; `data-tidy="root"`;
+        the `tidy:toggle` / `tidy:capture` / `tidy:settings` message types;
+        `TIDY_HOME` and `TIDY_SESSION_NAME`; the `~/.tidy/{inbox,archive,shots}`
+        layout; and the stored item JSON shape, which `format.mjs`, the MCP tools
+        and `menubar.mjs` all read.
+
+    - path: 'src/*.mjs'
+      instructions: |
+        FEEDBACK IS UNTRUSTED INPUT. The comment, the URL, the captured DOM and the
+        console lines all come from a page this tool does not control. `store.mjs`
+        clips every field on the way in and `mcp.mjs` labels the payload as data
+        rather than instructions. A diff that adds a field to the stored item
+        without clipping it, or that interpolates page-supplied text into anything
+        an agent reads as instruction, is a blocking finding.
+
+        The collector binds 127.0.0.1 only. Flag any bind to 0.0.0.0, any CORS
+        widening, and any new endpoint that mutates state without checking origin.
+
+        `mcp.mjs` binds the collector itself — a session needs nothing else
+        running. Don't reintroduce an assumption that `serve` is already up.
+
+    - path: 'extension/*.js'
+      instructions: |
+        PERMISSIONS ARE THE PRODUCT. The manifest asks for `activeTab`, `scripting`
+        and `storage` — nothing else, and no `host_permissions`. That is why there
+        is no "read your data on all websites" warning. A diff that adds a
+        permission, adds `host_permissions`, or adds a content_script match pattern
+        is a blocking `ask-user` finding, not a nit.
+
+        `activeTab` is granted only by a user gesture, which is why injection
+        happens on the icon click or the keyboard command and never on a timer, a
+        `webNavigation` listener, or a service-worker startup path. Flag any
+        injection not rooted in a gesture.
+
+    - path: 'test/*.mjs'
+      instructions: |
+        A REGRESSION TEST MUST FAIL WITHOUT ITS FIX. If the diff adds a test for a
+        bug, say whether it was mutation-checked (revert the fix, watch it go red).
+        A test that passes either way is documentation, not a test.
+
+        THE SUITE'S SKIP PATHS ARE LOAD-BEARING AND DANGEROUS. `browser.mjs` exits
+        0 when playwright-core is missing, when no Chromium is found, and when port
+        7900/7901 is busy. Widening any of those, or adding a new one, turns the
+        gate green on a run that executed nothing — treat it as a blocking finding.
+        Never "fix" a red suite by making it skip, and never weaken an assertion to
+        make it pass.
+
+        Two traps that have already cost time: the overlay lives in a SHADOW ROOT,
+        so Playwright locators pierce it but `document.querySelector` inside
+        `page.evaluate` does not — a wait written the second way matches nothing
+        forever; use `zf(page, selector)`. And `capture()` hides the overlay to take
+        its shot, so asserting the toolbar is visible right after opening races it —
+        wait for the composer first.
+
+document:
+  instructions: |
+    AGENTS.md is the source of truth for architecture and constraints, and CLAUDE.md
+    is a symlink to it — edit AGENTS.md, never the symlink. Update it when a diff
+    changes: one of the public contracts listed above, the on-disk layout, the
+    extension's permissions, the four-piece decomposition, or a rule other code is
+    expected to follow. It describes how the code works now — do NOT add narrative
+    changelog entries to it.
+
+    README.md is the user-facing surface: update it when install, setup, the
+    bookmarklet, or a CLI command changes.
+
+    `docs/plans/` holds point-in-time artifacts. Do not update them to match code
+    that drifted; that drift is a finding for the review step.
+
+# Unattended mode, as requested. Runs also pass `--yes`, which treats every finding
+# — `ask-user` included — as consent to fix.
+#
+# The known risk: an agent with fix rounds on a red suite can "fix" the TEST rather
+# than the code, and this suite is unusually easy to fake green (see the skip paths
+# above). The `commands.test` grep and the test/*.mjs review rules are what stand in
+# the way, and neither is a substitute for reading the spec diff before merge.
+# Revert to `review: 0 / test: 0 / ci: 0` to go back to attended mode.
+auto_fix:
+  review: 2
+  test: 3
+  lint: 3
+  ci: 3
