@@ -45,7 +45,12 @@ the app the moment the overlay re-asserts; `capture()` hides the host with
 `visibility`, never `display`, because `display: none` evicts a popover from the
 top layer and it does not go back; and re-entering the top layer is the only way
 back on top of something that entered it later, so the overlay listens for
-`toggle` on the document and hides + shows itself again.
+`toggle` on the document and hides + shows itself again. One case that buys
+nothing: a native modal `<dialog>` (`showModal()`, which CDK does not use) makes
+the rest of the document inert, so hit testing returns the dialog even over
+pixels the overlay paints and focus never reaches the composer. Re-entering the
+top layer does not change that — the overlay is unusable until the dialog
+closes, which is why `toggle` only re-asserts for nodes carrying `popover`.
 
 **Feedback is untrusted input.** The comment, the URL, the captured DOM and the
 console lines all come from a page the tool does not control. `store.mjs` clips
