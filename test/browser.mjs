@@ -66,6 +66,15 @@ const FIXTURE = `<!doctype html><html><body style="font-family:sans-serif;paddin
     <input id="layer-title" style="display:block;margin:8px 0">
     <ui-button><button id="save-btn" type="submit" data-testid="save" style="padding:8px 16px">Save</button></ui-button>
   </app-layer-edit>
+  <!-- Angular CDK 21 puts every overlay in the browser's TOP LAYER: usePopover
+       defaults to true, so the host carries popover + showPopover(). Nothing in
+       the normal layer can paint above that, z-index 2147483647 included. -->
+  <div id="cdk-host" popover style="background:none;border:none;padding:0;position:fixed;inset:auto;top:0;left:0;width:100%;height:100%;pointer-events:none">
+    <div id="cdk-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.32);pointer-events:auto"></div>
+    <div id="cdk-pane" style="position:absolute;left:200px;top:120px;width:520px;height:360px;background:#fff;pointer-events:auto">
+      <img id="thumb" alt="Repair clamp" style="width:120px;height:80px;background:#94a3b8;display:block">
+    </div>
+  </div>
 </body></html>`
 
 const OVERLAY_SOURCE = readFileSync(join(EXTENSION, 'overlay.js'), 'utf8')
@@ -74,6 +83,17 @@ const OVERLAY_SOURCE = readFileSync(join(EXTENSION, 'overlay.js'), 'utf8')
 const zf = (page, selector) => page.locator(`[data-tidy=root] ${selector}`)
 const sessionName = (page) => zf(page, '.bar .session .name')
 const composer = (page) => zf(page, '.panel').waitFor({ timeout: 8000 })
+
+/**
+ * elementFromPoint retargets shadow content to the host, so "the host is on top
+ * here" is the browser's own answer to "can the user reach this pixel".
+ */
+const onTop = (page, selector) =>
+  page.evaluate((sel) => {
+    const host = document.querySelector('[data-tidy=root]')
+    const rect = host.shadowRoot.querySelector(sel).getBoundingClientRect()
+    return document.elementFromPoint(rect.x + rect.width / 2, rect.y + 4) === host
+  }, selector)
 
 /** A page with the overlay injected. `init` runs before load and carries what varies. */
 async function overlayPage(browser, init, arg) {
@@ -379,11 +399,88 @@ pageServer.listen(PAGE_PORT, '127.0.0.1')
     await new Promise((done) => denied.close(done))
   }
 
+  {
+    // A CDK dialog is in the top layer, so the overlay has to be there too or the
+    // highlight, the composer and the toolbar are all painted underneath it — the
+    // picker still resolves the element, the user just cannot see that it did.
+    const page3 = await overlayPage(browser, (endpoint) => {
+      window.__tidyConfig = { endpoint, source: 'bookmarklet' }
+      window.__tidyCapture = async () => undefined
+    }, ENDPOINT)
+    await page3.evaluate(() => document.getElementById('cdk-host').showPopover())
+    await page3.evaluate(() => window.__tidy.open())
+    await composer(page3)
+
+    step('the toolbar stays clickable over a top-layer dialog', await onTop(page3, '.bar'))
+    step('the composer is not buried by a top-layer dialog', await onTop(page3, '.panel'))
+
+    await page3.keyboard.press('Alt+KeyE')
+    const thumb = await page3.locator('#thumb').boundingBox()
+    await page3.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+    await zf(page3, '.highlight').waitFor({ timeout: 5000 })
+    // The highlight is pointer-events:none, so hit testing cannot see it. Read the
+    // pixel instead: its 2px border is the only indigo on a white dialog.
+    const border = await page3.evaluate(() => {
+      const rect = document.querySelector('[data-tidy=root]').shadowRoot.querySelector('.highlight').getBoundingClientRect()
+      return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y) + 1, width: 1, height: 1 }
+    })
+    const pixel = await page3.evaluate(async (data) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${data}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = 1
+      canvas.height = 1
+      const context = canvas.getContext('2d')
+      context.drawImage(image, 0, 0)
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+    }, (await page3.screenshot({ clip: border })).toString('base64'))
+    step(
+      'the hover highlight paints above a top-layer dialog',
+      Math.abs(pixel[0] - 79) < 24 && Math.abs(pixel[1] - 70) < 24 && Math.abs(pixel[2] - 229) < 24,
+    )
+
+    await page3.mouse.click(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+    await composer(page3)
+    step(
+      'picking inside a top-layer dialog selects the element under the cursor',
+      (await zf(page3, '.target').innerText()).includes('#thumb'),
+    )
+    await page3.close()
+  }
+
+  {
+    // The other order: tidy is already open when the dialog appears. Without a
+    // re-assert the backdrop covers the toolbar, and the click meant for tidy lands
+    // on the backdrop instead — closing the dialog the user came to comment on.
+    const page4 = await overlayPage(browser, (endpoint) => {
+      window.__tidyConfig = { endpoint, source: 'bookmarklet' }
+      window.__tidyCapture = async () => undefined
+    }, ENDPOINT)
+    await page4.evaluate(() => window.__tidy.open())
+    await composer(page4)
+    await page4.evaluate(() => document.getElementById('cdk-host').showPopover())
+    // The toggle event that drives the re-assert is queued, not synchronous.
+    const recovered = await page4
+      .waitForFunction(() => {
+        const host = document.querySelector('[data-tidy=root]')
+        const rect = host.shadowRoot.querySelector('.bar').getBoundingClientRect()
+        return document.elementFromPoint(rect.x + rect.width / 2, rect.y + 4) === host
+      }, undefined, { timeout: 5000 })
+      .then(() => true, () => false)
+    step('a dialog opening after the overlay does not bury it', recovered)
+    step('the composer is still reachable after the dialog opens', await onTop(page4, '.panel'))
+    await page4.close()
+  }
+
   await page.evaluate(() => {
     window.__pageClicks = 0
     document.getElementById('save-btn').addEventListener('click', () => { window.__pageClicks += 1 })
     window.__tidy.open()
   })
+  // capture() hides the overlay for its shot; asserting on rendered text before
+  // the composer lands races that.
+  await composer(page)
   await page.keyboard.press('Alt+KeyE')
   step('alt+E arms picking from the keyboard', (await zf(page, '.bar button.on').innerText()).startsWith('Pick element'))
   await page.click('#save-btn')
