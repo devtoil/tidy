@@ -412,6 +412,16 @@
     else api.close()
   }
 
+  // Popovers and dialogs announce themselves with a non-bubbling `toggle`, which a
+  // capturing listener on the document still sees. Anything that opens after the
+  // overlay entered the top layer is now above it, so take the top back.
+  function onToggle(event) {
+    if (event.newState !== 'open') return
+    const node = event.composedPath()[0]
+    if (node === host || !(node.hasAttribute?.('popover') || node.tagName === 'DIALOG')) return
+    raise()
+  }
+
   // ---------------------------------------------------------------- composer
 
   function targetSummary() {
@@ -632,6 +642,7 @@
     ['mouseup', onUp, true],
     ['click', onClick, true],
     ['keydown', onKey, true],
+    ['toggle', onToggle, true],
   ]
 
   const api = {

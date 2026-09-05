@@ -66,7 +66,7 @@ breaking change, not a refactor:
 
 ```bash
 npm install
-npm test          # drives a real Chromium; 63 checks
+npm test          # drives a real Chromium; 65 checks
 ```
 
 `test/browser.mjs` is one linear script with a `step(name, bool)` helper — not a

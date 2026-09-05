@@ -84,6 +84,17 @@ const zf = (page, selector) => page.locator(`[data-tidy=root] ${selector}`)
 const sessionName = (page) => zf(page, '.bar .session .name')
 const composer = (page) => zf(page, '.panel').waitFor({ timeout: 8000 })
 
+/**
+ * elementFromPoint retargets shadow content to the host, so "the host is on top
+ * here" is the browser's own answer to "can the user reach this pixel".
+ */
+const onTop = (page, selector) =>
+  page.evaluate((sel) => {
+    const host = document.querySelector('[data-tidy=root]')
+    const rect = host.shadowRoot.querySelector(sel).getBoundingClientRect()
+    return document.elementFromPoint(rect.x + rect.width / 2, rect.y + 4) === host
+  }, selector)
+
 /** A page with the overlay injected. `init` runs before load and carries what varies. */
 async function overlayPage(browser, init, arg) {
   const page = await browser.newPage({ viewport: { width: 1000, height: 700 } })
@@ -400,16 +411,8 @@ pageServer.listen(PAGE_PORT, '127.0.0.1')
     await page3.evaluate(() => window.__tidy.open())
     await composer(page3)
 
-    // elementFromPoint retargets shadow content to the host, so "the host is on
-    // top here" is the browser's own answer to "can the user reach this pixel".
-    const reaches = (selector) =>
-      page3.evaluate((sel) => {
-        const host = document.querySelector('[data-tidy=root]')
-        const rect = host.shadowRoot.querySelector(sel).getBoundingClientRect()
-        return document.elementFromPoint(rect.x + rect.width / 2, rect.y + 4) === host
-      }, selector)
-    step('the toolbar stays clickable over a top-layer dialog', await reaches('.bar'))
-    step('the composer is not buried by a top-layer dialog', await reaches('.panel'))
+    step('the toolbar stays clickable over a top-layer dialog', await onTop(page3, '.bar'))
+    step('the composer is not buried by a top-layer dialog', await onTop(page3, '.panel'))
 
     await page3.keyboard.press('Alt+KeyE')
     const thumb = await page3.locator('#thumb').boundingBox()
@@ -444,6 +447,30 @@ pageServer.listen(PAGE_PORT, '127.0.0.1')
       (await zf(page3, '.target').innerText()).includes('#thumb'),
     )
     await page3.close()
+  }
+
+  {
+    // The other order: tidy is already open when the dialog appears. Without a
+    // re-assert the backdrop covers the toolbar, and the click meant for tidy lands
+    // on the backdrop instead — closing the dialog the user came to comment on.
+    const page4 = await overlayPage(browser, (endpoint) => {
+      window.__tidyConfig = { endpoint, source: 'bookmarklet' }
+      window.__tidyCapture = async () => undefined
+    }, ENDPOINT)
+    await page4.evaluate(() => window.__tidy.open())
+    await composer(page4)
+    await page4.evaluate(() => document.getElementById('cdk-host').showPopover())
+    // The toggle event that drives the re-assert is queued, not synchronous.
+    const recovered = await page4
+      .waitForFunction(() => {
+        const host = document.querySelector('[data-tidy=root]')
+        const rect = host.shadowRoot.querySelector('.bar').getBoundingClientRect()
+        return document.elementFromPoint(rect.x + rect.width / 2, rect.y + 4) === host
+      }, undefined, { timeout: 5000 })
+      .then(() => true, () => false)
+    step('a dialog opening after the overlay does not bury it', recovered)
+    step('the composer is still reachable after the dialog opens', await onTop(page4, '.panel'))
+    await page4.close()
   }
 
   await page.evaluate(() => {
