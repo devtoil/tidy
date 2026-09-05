@@ -85,7 +85,8 @@ Two traps that have already cost time:
   `document.querySelector` inside `page.evaluate` does not. A wait written the
   second way silently matches nothing forever. Use `zf(page, selector)`.
 - **`capture()` hides the overlay to take its shot.** Asserting the toolbar is
-  visible immediately after opening races that. Wait for the composer first.
+  visible — or reading its text, which comes back empty under `visibility:
+  hidden` — immediately after opening races that. Wait for the composer first.
 
 **A regression test must fail without its fix.** Revert the fix, watch the test
 go red, restore. A test that passes either way is documentation, not a test.
