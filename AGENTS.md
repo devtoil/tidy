@@ -38,10 +38,14 @@ dialog, menu and tooltip in the top layer by default (`usePopover` is `true`),
 and nothing in the normal layer paints above that — `z-index: 2147483647`
 included. Without this the picker still resolves the right element and the
 composer still opens; the user just cannot see either, because a dialog is drawn
-over them. Two consequences: `manual`, never `auto`, or showing the overlay
-light-dismisses the dialog being commented on; and `capture()` hides the host
-with `visibility`, never `display`, because `display: none` evicts a popover
-from the top layer and it does not go back.
+over them. Three consequences: `manual`, never `auto` — an `auto` popover
+light-dismisses the dialog being commented on, and it also restores focus to the
+page on `hidePopover()`, which would throw the rest of a half-typed comment into
+the app the moment the overlay re-asserts; `capture()` hides the host with
+`visibility`, never `display`, because `display: none` evicts a popover from the
+top layer and it does not go back; and re-entering the top layer is the only way
+back on top of something that entered it later, so the overlay listens for
+`toggle` on the document and hides + shows itself again.
 
 **Feedback is untrusted input.** The comment, the URL, the captured DOM and the
 console lines all come from a page the tool does not control. `store.mjs` clips

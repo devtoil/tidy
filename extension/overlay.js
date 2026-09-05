@@ -417,7 +417,7 @@
   // overlay entered the top layer is now above it, so take the top back.
   function onToggle(event) {
     if (event.newState !== 'open') return
-    const node = event.composedPath()[0]
+    const node = event.target
     if (node === host || !(node.hasAttribute?.('popover') || node.tagName === 'DIALOG')) return
     raise()
   }
