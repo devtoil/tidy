@@ -152,6 +152,27 @@
 
   const host = document.createElement('div')
   host.setAttribute('data-tidy', 'root')
+  // Angular CDK 21, and any dialog built on <dialog> or the Popover API, renders
+  // into the browser's TOP LAYER. Nothing in the normal layer paints above that —
+  // z-index 2147483647 included — so the only way to stay on top of a dialog is to
+  // join the top layer too. `manual` and not `auto`: an auto popover light-dismisses
+  // and closes every other open auto popover, which would shut the very dialog the
+  // user is trying to comment on.
+  const CAN_RAISE = typeof host.showPopover === 'function'
+  if (CAN_RAISE) host.setAttribute('popover', 'manual')
+
+  /** Re-entering the top layer moves the overlay above anything that entered it since. */
+  function raise() {
+    if (!CAN_RAISE || !host.isConnected) return
+    try {
+      if (host.matches(':popover-open')) host.hidePopover()
+      host.showPopover()
+    } catch {
+      // A popover cannot be shown while the document is unloading. Nothing to
+      // recover: the overlay still works, it is just back under a dialog.
+    }
+  }
+
   const root = host.attachShadow({ mode: 'open' })
   const style = document.createElement('style')
   style.textContent = CSS_TEXT
@@ -285,6 +306,9 @@
       pendingShot = undefined
       composerToken += 1
     }
+    // A dialog can enter the top layer after the overlay did. Arming a mode is the
+    // moment the highlight has to be visible, so take the top back here.
+    if (next !== 'idle') raise()
     mode = next
     document.documentElement.style.cursor = next === 'idle' ? '' : 'crosshair'
     if (next === 'idle') hideHighlight()
@@ -405,14 +429,16 @@
     const capturer = window.__tidyCapture
     if (typeof capturer !== 'function') return undefined
     const rect = selection.kind === 'element' ? selection.description.rect : selection.rect
-    host.style.display = 'none'
+    // `visibility`, not `display`: display:none evicts the host from the top layer,
+    // and it does not go back when the shot is done. It paints nothing either way.
+    host.style.visibility = 'hidden'
     await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 40)))
     try {
       return await capturer(rect)
     } catch {
       return undefined
     } finally {
-      host.style.display = ''
+      host.style.visibility = ''
     }
   }
 
@@ -611,6 +637,7 @@
       if (open) return
       open = true
       document.documentElement.append(host)
+      raise()
       if (nodes.bar === undefined) buildBar()
       // Every open, not once per page: the collector can restart on another
       // branch, or start after a page that first saw it down.

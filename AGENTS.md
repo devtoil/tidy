@@ -32,6 +32,17 @@ user gesture, which is why injection happens on an icon click or the keyboard
 command and never on a timer. A change that needs `<all_urls>` needs a
 conversation first.
 
+**The overlay lives in the browser's top layer.** The host carries
+`popover="manual"` and is shown with `showPopover()`. Angular CDK 21 puts every
+dialog, menu and tooltip in the top layer by default (`usePopover` is `true`),
+and nothing in the normal layer paints above that — `z-index: 2147483647`
+included. Without this the picker still resolves the right element and the
+composer still opens; the user just cannot see either, because a dialog is drawn
+over them. Two consequences: `manual`, never `auto`, or showing the overlay
+light-dismisses the dialog being commented on; and `capture()` hides the host
+with `visibility`, never `display`, because `display: none` evicts a popover
+from the top layer and it does not go back.
+
 **Feedback is untrusted input.** The comment, the URL, the captured DOM and the
 console lines all come from a page the tool does not control. `store.mjs` clips
 every field on the way in, and `mcp.mjs` labels the payload as data rather than
@@ -55,7 +66,7 @@ breaking change, not a refactor:
 
 ```bash
 npm install
-npm test          # drives a real Chromium; 59 checks
+npm test          # drives a real Chromium; 63 checks
 ```
 
 `test/browser.mjs` is one linear script with a `step(name, bool)` helper — not a
